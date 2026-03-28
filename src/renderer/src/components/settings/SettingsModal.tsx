@@ -1008,6 +1008,18 @@ function GeneralTab({
 
       <Separator />
 
+      {/* External Editor */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3">External Editor</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          The command used to open the project folder in an external editor.
+          Defaults to VS Code. Use {'{path}'} as a placeholder for the project path.
+        </p>
+        <EditorCommandInput />
+      </div>
+
+      <Separator />
+
       {/* Compaction */}
       <div>
         <h3 className="text-sm font-semibold mb-3">Context Compaction</h3>
@@ -1180,6 +1192,79 @@ function PiTab() {
         <RefreshCw className={cn('w-3.5 h-3.5 mr-2', loading && 'animate-spin')} />
         Refresh Status
       </Button>
+    </div>
+  )
+}
+
+// ============================================================================
+// Editor Command Input (standalone, reads/writes its own setting)
+// ============================================================================
+
+function EditorCommandInput() {
+  const { addToast } = useToastStore()
+  const [command, setCommand] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.piStudio.app.getEditor().then(setCommand)
+  }, [])
+
+  const handleSave = async () => {
+    const value = command ?? ''
+    await window.piStudio.app.setEditor(value)
+    addToast(value ? 'Editor command saved' : 'Reset to default (VS Code)', 'success')
+  }
+
+  const handleReset = async () => {
+    setCommand('')
+    await window.piStudio.app.setEditor('')
+    addToast('Reset to default (VS Code)', 'info')
+  }
+
+  const presets = [
+    { label: 'VS Code', value: 'code' },
+    { label: 'Cursor', value: 'cursor' },
+    { label: 'Windsurf', value: 'windsurf' },
+    { label: 'WebStorm', value: 'webstorm' },
+    { label: 'Sublime Text', value: 'subl' },
+    { label: 'Nova', value: 'nova' },
+  ]
+
+  return (
+    <div className="space-y-3">
+      <Input
+        label="Editor Command"
+        placeholder="code {path}"
+        value={command ?? ''}
+        onChange={(e) => setCommand(e.target.value)}
+        hint="e.g. code {path} or cursor {path}. Leave empty for auto-detect."
+        className="h-9 text-sm font-mono"
+      />
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Presets:</span>
+        {presets.map((p) => (
+          <button
+            key={p.value}
+            onClick={() => setCommand(p.value)}
+            className={cn(
+              'px-2 py-1 text-xs rounded-md border transition-colors',
+              command === p.value
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/30'
+            )}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={handleSave}>
+          <Save className="w-3.5 h-3.5 mr-1.5" />
+          Save
+        </Button>
+        <Button variant="ghost" size="sm" onClick={handleReset}>
+          Reset to Default
+        </Button>
+      </div>
     </div>
   )
 }

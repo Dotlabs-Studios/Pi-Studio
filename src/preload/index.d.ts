@@ -105,6 +105,22 @@ export interface PiStudioAPI {
     openExternal: (url: string) => Promise<void>
   }
 
+  terminal: {
+    create: (cwd: string, shell?: string) => Promise<string>
+    write: (terminalId: string, data: string) => Promise<void>
+    resize: (terminalId: string, cols: number, rows: number) => Promise<void>
+    kill: (terminalId: string) => Promise<void>
+    isAlive: (terminalId: string) => Promise<boolean>
+    getCwd: (terminalId: string) => Promise<string | undefined>
+    onData: (callback: (terminalId: string, data: string) => void) => () => void
+  }
+
+  app: {
+    openInEditor: (cwd: string) => Promise<{ success: boolean; editor?: string; error?: string }>
+    getEditor: () => Promise<string | null>
+    setEditor: (command: string) => Promise<void>
+  }
+
   onGlobalShortcut: (callback: (action: string) => void) => () => void
 
   window: {

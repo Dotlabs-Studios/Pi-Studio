@@ -12,6 +12,8 @@ import {
   FolderPlus,
   Clock,
   RefreshCw,
+  Terminal,
+  ExternalLink,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -25,7 +27,7 @@ import { Badge } from '@/components/ui/primitives'
 export function Header() {
   const { currentProject, recentProjects } = useProjectStore()
   const { providers, selectedProvider, selectedModel, setSelectedProvider, setSelectedModel, reloadProviders } = useProviderStore()
-  const { setSettingsOpen, toggleSidebar } = useUIStore()
+  const { setSettingsOpen, toggleSidebar, terminalOpen, toggleTerminal } = useUIStore()
   const { messages, setThreadId, clearMessages, isStreaming } = useChatStore()
   const { addToast } = useToastStore()
 
@@ -54,6 +56,10 @@ export function Header() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
         e.preventDefault()
         toggleSidebar()
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+        e.preventDefault()
+        toggleTerminal()
       }
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {
         e.preventDefault()
@@ -121,6 +127,16 @@ export function Header() {
     } catch (err: any) {
       addToast(err.message || 'Failed to start session', 'error')
       useChatStore.getState().setError(err.message || 'Failed to start session')
+    }
+  }
+
+  const handleOpenInEditor = async () => {
+    if (!currentProject) return
+    const result = await window.piStudio.app.openInEditor(currentProject)
+    if (result.success) {
+      addToast(`Opened in ${result.editor || 'editor'}`, 'success')
+    } else {
+      addToast(result.error || 'Failed to open editor', 'error')
     }
   }
 
@@ -352,6 +368,25 @@ export function Header() {
 
       {/* ─── Actions ─── */}
       <div className="flex items-center gap-1.5 ml-auto">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleOpenInEditor}
+          disabled={!currentProject}
+          title="Open in Editor"
+        >
+          <ExternalLink className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleTerminal}
+          disabled={!currentProject}
+          title="Toggle Terminal (Ctrl+`)"
+          className={cn(terminalOpen && 'bg-secondary/50 text-foreground')}
+        >
+          <Terminal className="w-4 h-4" />
+        </Button>
         <Button variant="ghost" size="icon" onClick={handleNewChat} disabled={!currentProject} title="New Chat (Ctrl+Shift+N)">
           <MessageSquarePlus className="w-4 h-4" />
         </Button>

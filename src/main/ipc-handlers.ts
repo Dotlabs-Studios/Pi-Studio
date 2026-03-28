@@ -6,6 +6,8 @@
  */
 
 import { ipcMain, dialog, BrowserWindow, shell } from 'electron'
+import { exec } from 'child_process'
+import { promisify } from 'util'
 import { piRuntime } from './core/pi-runtime'
 import { eventBus } from './core/event-bus'
 import { settingsStore } from './core/settings-store'
@@ -14,8 +16,11 @@ import { providerManager } from './core/provider-manager'
 import { skillManager } from './core/skill-manager'
 import { sessionManager } from './core/session-manager'
 import { piInstaller } from './core/pi-installer'
+import { terminalManager } from './core/terminal-manager'
 import type { RuntimeEvent, PiSettings, PackageSource, Session } from '../shared/types'
 import { registerFileTreeHandlers } from './file-tree'
+
+const execAsync = promisify(exec)
 
 /**
  * Register all IPC handlers.
@@ -387,6 +392,82 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('app:get-path', async (_event, name: string) => {
     const { app } = await import('electron')
     return app.getPath(name as any)
+  })
+
+  // ==========================================================================
+  // Terminal
+  // ==========================================================================
+
+  terminalManager.setMainWindow(mainWindow)
+
+  ipcMain.handle('terminal:create', async (_event, cwd: string, shell?: string) => {
+    return terminalManager.createSession(cwd, shell)
+  })
+
+  ipcMain.handle('terminal:write', async (_event, terminalId: string, data: string) => {
+    terminalManager.write(terminalId, data)
+  })
+
+  ipcMain.handle('terminal:resize', async (_event, terminalId: string, cols: number, rows: number) => {
+    terminalManager.resize(terminalId, cols, rows)
+  })
+
+  ipcMain.handle('terminal:kill', async (_event, terminalId: string) => {
+    terminalManager.kill(terminalId)
+  })
+
+  ipcMain.handle('terminal:is-alive', async (_event, terminalId: string) => {
+    return terminalManager.isAlive(terminalId)
+  })
+
+  ipcMain.handle('terminal:get-cwd', async (_event, terminalId: string) => {
+    return terminalManager.getCwd(terminalId)
+  })
+
+  // ==========================================================================
+  // Open in Editor
+  // ==========================================================================
+
+  ipcMain.handle('app:open-in-editor', async (_event, cwd: string) => {
+    const customCommand = settingsStore.getCustomEditorCommand()
+    if (customCommand) {
+      // Custom editor command — replace {path} placeholder or append path
+      const cmd = customCommand.includes('{path}')
+        ? customCommand.replace('{path}', cwd)
+        : `${customCommand} "${cwd}"`
+      try {
+        await execAsync(cmd)
+        return { success: true }
+      } catch (err: any) {
+        return { success: false, error: err.message }
+      }
+    }
+
+    // Default: try VS Code, then common alternatives
+    const candidates = ['code', 'cursor', 'windsurf']
+    for (const editor of candidates) {
+      try {
+        const cmd = process.platform === 'win32'
+          ? `where ${editor}`
+          : `which ${editor}`
+        await execAsync(cmd)
+        // Found — open it
+        await execAsync(`${editor} "${cwd}"`)
+        return { success: true, editor }
+      } catch {
+        // Not found, try next
+      }
+    }
+
+    return { success: false, error: 'No editor found. Set a custom editor command in Settings.' }
+  })
+
+  ipcMain.handle('settings:get-editor', async () => {
+    return settingsStore.getCustomEditorCommand()
+  })
+
+  ipcMain.handle('settings:set-editor', async (_event, command: string) => {
+    settingsStore.setCustomEditorCommand(command)
   })
 
   // ==========================================================================

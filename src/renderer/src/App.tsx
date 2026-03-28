@@ -10,6 +10,8 @@ import { ChatView } from '@/components/chat/ChatView'
 import { WelcomeScreen } from '@/components/welcome/WelcomeScreen'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/ui/toast'
+import { Footer } from '@/components/layout/Footer'
+import { TerminalPanel } from '@/components/terminal/TerminalPanel'
 import { useProjectStore } from '@/stores/project-store'
 import { useChatStore } from '@/stores/chat-store'
 import { useProviderStore } from '@/stores/provider-store'
@@ -20,6 +22,7 @@ export default function App() {
   const { currentProject, setProject, setRecentProjects } = useProjectStore()
   const { handleRuntimeEvent } = useChatStore()
   const { setProviders } = useProviderStore()
+  const { terminalOpen, toggleTerminal } = useUIStore()
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -116,10 +119,12 @@ export default function App() {
       <Header />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden">
           <ChatView />
+          {terminalOpen && <TerminalPanel />}
         </div>
       </div>
+      <Footer />
       <SettingsModal />
       <ToastContainer />
     </div>

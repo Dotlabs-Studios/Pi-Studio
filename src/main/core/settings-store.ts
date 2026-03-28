@@ -31,6 +31,7 @@ interface StoreSchema {
   sidebarOpen: boolean
   activeTheme: string
   binaryPath: string | null
+  customEditorCommand: string | null
 }
 
 const DEFAULT_SETTINGS: PiSettings = {
@@ -73,6 +74,7 @@ class SettingsStore {
         sidebarOpen: true,
         activeTheme: 'dark',
         binaryPath: null,
+        customEditorCommand: null,
       },
     })
   }
@@ -195,6 +197,14 @@ class SettingsStore {
 
   setBinaryPath(path: string): void {
     this.store.set('binaryPath', path)
+  }
+
+  getCustomEditorCommand(): string | null {
+    return this.store.get('customEditorCommand')
+  }
+
+  setCustomEditorCommand(command: string): void {
+    this.store.set('customEditorCommand', command)
   }
 }
 

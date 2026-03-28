@@ -20,6 +20,21 @@ interface ChatState {
   pendingRequests: ApprovalRequest[]
   error: string | null
 
+  // Token usage tracking
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCacheReadTokens: number
+  totalCacheWriteTokens: number
+  totalCost: number
+  lastUsage: {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+    totalTokens: number
+    cost: number
+  } | null
+
   setThreadId: (threadId: string | null) => void
   addUserMessage: (content: string) => void
   setMessages: (messages: ChatMessage[]) => void
@@ -59,6 +74,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   pendingRequests: [],
   error: null,
+
+  // Token usage tracking
+  totalInputTokens: 0,
+  totalOutputTokens: 0,
+  totalCacheReadTokens: 0,
+  totalCacheWriteTokens: 0,
+  totalCost: 0,
+  lastUsage: null,
 
   setThreadId: (threadId) => set({ threadId }),
 
@@ -259,6 +282,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         break
       }
 
+      case 'turn.usage': {
+        const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, totalTokens, cost } = event.payload
+        set((s) => ({
+          totalInputTokens: s.totalInputTokens + inputTokens,
+          totalOutputTokens: s.totalOutputTokens + outputTokens,
+          totalCacheReadTokens: s.totalCacheReadTokens + cacheReadTokens,
+          totalCacheWriteTokens: s.totalCacheWriteTokens + cacheWriteTokens,
+          totalCost: s.totalCost + cost,
+          lastUsage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, totalTokens, cost },
+        }))
+        break
+      }
+
       case 'session.exited':
         set({ isStreaming: false, error: event.payload.reason })
         break
@@ -266,7 +302,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   clearMessages: () =>
-    set({ messages: [], pendingRequests: [], error: null }),
+    set({
+      messages: [],
+      pendingRequests: [],
+      error: null,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCacheReadTokens: 0,
+      totalCacheWriteTokens: 0,
+      totalCost: 0,
+      lastUsage: null,
+    }),
 
   resolveRequest: async (requestId, decision, value) => {
     const { threadId } = get()

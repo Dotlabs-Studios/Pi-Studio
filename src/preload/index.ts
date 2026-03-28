@@ -119,6 +119,30 @@ const piStudioAPI = {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
+  // ---- Terminal ----
+  terminal: {
+    create: (cwd: string, shell?: string) => ipcRenderer.invoke('terminal:create', cwd, shell),
+    write: (terminalId: string, data: string) => ipcRenderer.invoke('terminal:write', terminalId, data),
+    resize: (terminalId: string, cols: number, rows: number) =>
+      ipcRenderer.invoke('terminal:resize', terminalId, cols, rows),
+    kill: (terminalId: string) => ipcRenderer.invoke('terminal:kill', terminalId),
+    isAlive: (terminalId: string) => ipcRenderer.invoke('terminal:is-alive', terminalId),
+    getCwd: (terminalId: string) => ipcRenderer.invoke('terminal:get-cwd', terminalId),
+    onData: (callback: (terminalId: string, data: string) => void) => {
+      const handler = (_event: any, msg: { terminalId: string; data: string }) =>
+        callback(msg.terminalId, msg.data)
+      ipcRenderer.on('terminal:data', handler)
+      return () => ipcRenderer.removeListener('terminal:data', handler)
+    },
+  },
+
+  // ---- App Actions ----
+  app: {
+    openInEditor: (cwd: string) => ipcRenderer.invoke('app:open-in-editor', cwd),
+    getEditor: () => ipcRenderer.invoke('settings:get-editor'),
+    setEditor: (command: string) => ipcRenderer.invoke('settings:set-editor', command),
+  },
+
   // ---- File Tree ----
   files: {
     tree: (cwd: string) => ipcRenderer.invoke('files:tree', cwd),

@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc-handlers'
 import { piRuntime } from './core/pi-runtime'
+import { terminalManager } from './core/terminal-manager'
 import { settingsStore } from './core/settings-store'
 
 let mainWindow: BrowserWindow | null = null
@@ -60,6 +61,7 @@ function createWindow(): void {
 
     // Stop all pi sessions
     await piRuntime.stopAll()
+    terminalManager.killAll()
   })
 
   mainWindow.on('closed', () => {
@@ -128,6 +130,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   piRuntime.stopAll()
+  terminalManager.killAll()
   globalShortcut.unregisterAll()
   if (process.platform !== 'darwin') {
     app.quit()

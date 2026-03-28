@@ -102,6 +102,20 @@ export type RuntimeEvent =
       threadId: string
       payload: { message: string; detail?: unknown }
     }
+  | {
+      type: 'turn.usage'
+      eventId: string
+      threadId: string
+      turnId?: string
+      payload: {
+        inputTokens: number
+        outputTokens: number
+        cacheReadTokens: number
+        cacheWriteTokens: number
+        totalTokens: number
+        cost: number
+      }
+    }
 
 // ============================================================================
 // Session Types

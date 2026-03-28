@@ -308,6 +308,38 @@ class PiRuntime {
           })
         }
 
+        // Extract token usage from assistant messages
+        if (Array.isArray(event.messages)) {
+          for (const msg of event.messages) {
+            if (msg && typeof msg === 'object' && (msg as Record<string, unknown>).role === 'assistant') {
+              const usage = (msg as Record<string, unknown>).usage as
+                | { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: { total?: number } }
+                | undefined
+              if (usage && (usage.input || usage.output)) {
+                const inputTokens = usage.input ?? 0
+                const outputTokens = usage.output ?? 0
+                const cacheReadTokens = usage.cacheRead ?? 0
+                const cacheWriteTokens = usage.cacheWrite ?? 0
+                const cost = usage.cost?.total ?? 0
+                events.push({
+                  type: 'turn.usage',
+                  eventId: makeEventId(),
+                  threadId,
+                  turnId,
+                  payload: {
+                    inputTokens,
+                    outputTokens,
+                    cacheReadTokens,
+                    cacheWriteTokens,
+                    totalTokens: inputTokens + outputTokens,
+                    cost,
+                  },
+                })
+              }
+            }
+          }
+        }
+
         // Turn completed
         if (turnId) {
           events.push({

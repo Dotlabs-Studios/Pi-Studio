@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand'
+import { useChatStore } from './chat-store'
 
 interface ProjectState {
   currentProject: string | null
@@ -20,8 +21,17 @@ export const useProjectStore = create<ProjectState>((set) => ({
   recentProjects: [],
   isLoading: false,
 
-  setProject: (path) =>
-    set({ currentProject: path, isLoading: false }),
+  setProject: (path) => {
+    // Stop current pi session and clear chat
+    const chat = useChatStore.getState()
+    if (chat.threadId) {
+      window.piStudio.pi.stopSession(chat.threadId).catch(() => {})
+    }
+    chat.clearMessages()
+    chat.setThreadId(null)
+
+    set({ currentProject: path, isLoading: false })
+  },
 
   setRecentProjects: (projects) =>
     set({ recentProjects: projects }),
