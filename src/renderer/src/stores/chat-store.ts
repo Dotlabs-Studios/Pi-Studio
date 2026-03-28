@@ -276,6 +276,7 @@ interface ChatState {
   tabs: ChatTab[]
   activeTabId: string | null
   currentSessionFilePath: string | null
+  currentSessionName: string | null
 
   // ── Active tab's state (flat, for backwards compatibility) ──
   threadId: string | null
@@ -298,7 +299,7 @@ interface ChatState {
   closeTab: (tabId: string) => void
   switchToTab: (tabId: string) => void
   closeAllTabs: () => void
-  setCurrentSession: (filePath: string | null) => void
+  setCurrentSession: (filePath: string | null, name?: string) => void
 
   // ── Active tab actions (backwards compatible) ──
   setThreadId: (threadId: string | null) => void
@@ -367,11 +368,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   tabs: [],
   activeTabId: null,
   currentSessionFilePath: null,
+  currentSessionName: null,
   ...emptyFlat(),
 
   // ── Tab Management ──────────────────────────────────────────────────────
 
-  createTab: ({ cwd, threadId, provider, model, label }) => {
+  createTab: ({ cwd, threadId, provider, model, label, sessionFilePath, conversationId }) => {
     const tab = emptyTab({
       id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       threadId,
@@ -379,6 +381,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       provider,
       model,
       label: label || 'New Chat',
+      sessionFilePath,
+      conversationId,
     })
     set((state) => ({
       tabs: [...state.tabs, tab],
@@ -415,7 +419,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   switchToTab: (tabId) => {
     const tab = get().tabs.find((t) => t.id === tabId)
     if (!tab) return
-    set({ activeTabId: tabId, ...tabToFlat(tab) })
+    set((state) => ({
+      activeTabId: tabId,
+      ...tabToFlat(tab),
+      // Sync session context when switching tabs
+      currentSessionFilePath: tab.sessionFilePath ?? state.currentSessionFilePath,
+    }))
   },
 
   closeAllTabs: () => {
@@ -425,10 +434,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         window.piStudio.pi.stopSession(tab.threadId).catch(() => {})
       }
     }
-    set({ tabs: [], activeTabId: null, currentSessionFilePath: null, ...emptyFlat() })
+    set({ tabs: [], activeTabId: null, currentSessionFilePath: null, currentSessionName: null, ...emptyFlat() })
   },
 
-  setCurrentSession: (filePath) => set({ currentSessionFilePath: filePath }),
+  setCurrentSession: (filePath, name) => set({ currentSessionFilePath: filePath, currentSessionName: name ?? null }),
 
   // ── Active Tab Actions (backwards compatible) ───────────────────────────
 
@@ -449,6 +458,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Auto-rename tab on first user message
       label: tab.label === 'New Chat' ? content.substring(0, 60) : tab.label,
     }))
+    // Auto-rename session indicator on first message
+    const state = get()
+    if (state.currentSessionName === 'New Session') {
+      set({ currentSessionName: content.substring(0, 60) })
+    }
   },
 
   setMessages: (messages) => {

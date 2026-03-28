@@ -110,6 +110,9 @@ function SessionsPanel() {
   const handleNewSession = async () => {
     if (!currentProject) return
 
+    // Close all tabs from the previous session and reset chat state
+    useChatStore.getState().closeAllTabs()
+
     // Create a new session file on disk
     const session = await window.piStudio.session.create(currentProject)
     const conversationId = `conv_${uuid()}`
@@ -124,7 +127,7 @@ function SessionsPanel() {
         sessionFilePath: session.filePath,
         conversationId,
       })
-      useChatStore.getState().setCurrentSession(session.filePath)
+      useChatStore.getState().setCurrentSession(session.filePath, 'New Session')
       useChatStore.getState().createTab({
         cwd: currentProject,
         threadId: newThreadId,
@@ -152,7 +155,10 @@ function SessionsPanel() {
 
       // Close previous tabs (from a different session)
       useChatStore.getState().closeAllTabs()
-      useChatStore.getState().setCurrentSession(filePath)
+
+      const firstConv = conversations[0]
+      const sessionTitle = firstConv?.label || 'New Session'
+      useChatStore.getState().setCurrentSession(filePath, sessionTitle)
 
       // Create one tab per conversation (no pi process — threadId is empty string)
       for (const conv of conversations) {

@@ -141,6 +141,9 @@ export function Header() {
     }
 
     // No current session — create a brand new one
+    // Close any leftover tabs first
+    useChatStore.getState().closeAllTabs()
+
     const session = await window.piStudio.session.create(currentProject)
     const newThreadId = crypto.randomUUID()
     try {
@@ -151,7 +154,7 @@ export function Header() {
         sessionFilePath: session.filePath,
         conversationId,
       })
-      useChatStore.getState().setCurrentSession(session.filePath)
+      useChatStore.getState().setCurrentSession(session.filePath, 'New Session')
       useChatStore.getState().createTab({
         cwd: currentProject,
         threadId: newThreadId,

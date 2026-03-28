@@ -21,7 +21,7 @@ import { useToastStore } from '@/stores/toast-store'
 
 export default function App() {
   const { currentProject, setProject, setRecentProjects } = useProjectStore()
-  const { handleRuntimeEvent } = useChatStore()
+  const { handleRuntimeEvent, activeTabId } = useChatStore()
   const { setProviders } = useProviderStore()
   const { terminalOpen, toggleTerminal } = useUIStore()
   const [ready, setReady] = useState(false)
@@ -122,7 +122,7 @@ export default function App() {
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <ChatTabBar />
-          <ChatView />
+          <ChatView key={activeTabId ?? 'no-tab'} />
           {terminalOpen && <TerminalPanel />}
         </div>
       </div>
