@@ -19,10 +19,18 @@ import { ScrollArea, Badge, Separator } from '@/components/ui/primitives'
 import { useUIStore } from '@/stores/ui-store'
 import { useProjectStore } from '@/stores/project-store'
 import { useChatStore } from '@/stores/chat-store'
+import type { TabStatus } from '@/stores/chat-store'
 import { useProviderStore } from '@/stores/provider-store'
 import { useToastStore } from '@/stores/toast-store'
 import { uuid, formatDate, truncate } from '@/lib/utils'
 import type { SessionSummary, Skill, ChatMessage } from '../../../shared/types'
+
+const STATUS_DOT_COLORS: Record<TabStatus, string> = {
+  idle: 'bg-muted-foreground/30',
+  streaming: 'bg-yellow-400',
+  completed: 'bg-green-400',
+  error: 'bg-red-400',
+}
 
 const SIDEBAR_TABS = [
   { id: 'sessions' as const, label: 'Sessions', icon: MessageSquare },
@@ -75,7 +83,9 @@ export function Sidebar() {
 
 function SessionsPanel() {
   const { currentProject } = useProjectStore()
-  const { threadId, messages, setThreadId, clearMessages, addUserMessage } = useChatStore()
+  const { threadId } = useChatStore()
+  const chatTabs = useChatStore((s) => s.tabs)
+  const sessionListVersion = useProjectStore((s) => s.sessionListVersion)
   const { selectedProvider, selectedModel } = useProviderStore()
   const { addToast } = useToastStore()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -95,14 +105,15 @@ function SessionsPanel() {
     setLoading(false)
   }, [currentProject])
 
-  useEffect(() => { loadSessions() }, [loadSessions])
+  useEffect(() => { loadSessions() }, [loadSessions, sessionListVersion])
 
   const handleNewSession = async () => {
     if (!currentProject) return
-    const state = useChatStore.getState()
-    if (state.threadId) {
-      try { await window.piStudio.pi.stopSession(state.threadId) } catch {}
-    }
+
+    // Create a new session file on disk
+    const session = await window.piStudio.session.create(currentProject)
+    const conversationId = `conv_${uuid()}`
+
     const newThreadId = uuid()
     try {
       await window.piStudio.pi.startSession({
@@ -110,10 +121,20 @@ function SessionsPanel() {
         cwd: currentProject,
         provider: selectedProvider ?? undefined,
         model: selectedModel ?? undefined,
+        sessionFilePath: session.filePath,
+        conversationId,
       })
-      setThreadId(newThreadId)
-      clearMessages()
-      loadSessions()
+      useChatStore.getState().setCurrentSession(session.filePath)
+      useChatStore.getState().createTab({
+        cwd: currentProject,
+        threadId: newThreadId,
+        provider: selectedProvider ?? undefined,
+        model: selectedModel ?? undefined,
+        label: 'New Chat',
+        sessionFilePath: session.filePath,
+        conversationId,
+      })
+      useProjectStore.getState().bumpSessionList()
       addToast('New session started', 'success')
     } catch (err: any) {
       useChatStore.getState().setError(err.message || 'Failed to start session')
@@ -122,54 +143,55 @@ function SessionsPanel() {
 
   const handleLoadSession = async (filePath: string) => {
     try {
+      // Extract conversations from the session file
+      const conversations = await window.piStudio.session.conversations(filePath)
+      if (!conversations || conversations.length === 0) { addToast('Could not load session', 'error'); return }
+
       const session = await window.piStudio.session.load(filePath)
       if (!session) { addToast('Could not load session', 'error'); return }
 
-      // Stop current session
-      const chatState = useChatStore.getState()
-      if (chatState.threadId) {
-        try { await window.piStudio.pi.stopSession(chatState.threadId) } catch {}
+      // Close previous tabs (from a different session)
+      useChatStore.getState().closeAllTabs()
+      useChatStore.getState().setCurrentSession(filePath)
+
+      // Create one tab per conversation (no pi process — threadId is empty string)
+      for (const conv of conversations) {
+        const chatMessages: ChatMessage[] = conv.entries
+          .filter(e => e.role === 'user' || e.role === 'assistant')
+          .map(e => ({
+            id: e.id,
+            role: e.role as 'user' | 'assistant',
+            content: typeof e.content === 'string' ? e.content : JSON.stringify(e.content),
+            timestamp: e.timestamp,
+            status: 'completed' as const,
+          }))
+
+        if (chatMessages.length === 0) continue
+
+        useChatStore.getState().createTab({
+          cwd: session.cwd,
+          threadId: '',  // no pi process yet — will start on first send
+          provider: session.provider,
+          model: session.model,
+          label: conv.label,
+          sessionFilePath: filePath,
+          conversationId: conv.id,
+        })
+        // Load the messages into the just-created (active) tab
+        useChatStore.getState().setMessages(chatMessages)
       }
 
-      // Reconstruct messages from session entries
-      const chatMessages: ChatMessage[] = session.entries
-        .filter(e => e.role === 'user' || e.role === 'assistant')
-        .map(e => ({
-          id: e.id,
-          role: e.role as 'user' | 'assistant',
-          content: typeof e.content === 'string' ? e.content : JSON.stringify(e.content),
-          timestamp: e.timestamp,
-          status: 'completed' as const,
-        }))
-
-      if (chatMessages.length === 0) {
-        addToast('Session is empty', 'info')
-        return
+      // Switch to the first tab
+      if (conversations.length > 0) {
+        const firstTabId = useChatStore.getState().tabs[0]?.id
+        if (firstTabId) useChatStore.getState().switchToTab(firstTabId)
       }
-
-      // Start a new pi session with the same model/provider
-      const newThreadId = uuid()
-      await window.piStudio.pi.startSession({
-        threadId: newThreadId,
-        cwd: session.cwd,
-        provider: session.provider,
-        model: session.model,
-      })
-
-      // Set everything in one atomic update — threadId, messages, clear errors
-      useChatStore.setState({
-        threadId: newThreadId,
-        messages: chatMessages,
-        isStreaming: false,
-        pendingRequests: [],
-        error: null,
-      })
 
       // Update provider/model selectors
       if (session.provider) useProviderStore.getState().setSelectedProvider(session.provider)
       if (session.model) useProviderStore.getState().setSelectedModel(session.model)
 
-      addToast('Session loaded', 'success')
+      addToast(`Session loaded (${conversations.length} conversation${conversations.length > 1 ? 's' : ''})`, 'success')
     } catch (err: any) {
       addToast(`Failed to load: ${err.message}`, 'error')
     }
@@ -235,7 +257,12 @@ function SessionsPanel() {
           </div>
         ) : (
           <div className="space-y-0.5">
-            {filteredSessions.map(session => (
+            {filteredSessions.map(session => {
+              // Check if this session is open in a tab — show status dot
+              const openTab = chatTabs.find(t => t.threadId && t.messages.length > 0)
+              // We check by matching loaded session titles/content heuristically
+              // Actually, we can't match directly. Skip status dot for session list.
+              return (
               <div key={session.id} className="relative group">
                 <button
                   onClick={() => handleLoadSession(session.filePath)}
@@ -244,7 +271,9 @@ function SessionsPanel() {
                     'hover:bg-secondary/40 text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  <span className="text-sm font-medium truncate w-full">{truncate(session.title, 50)}</span>
+                  <div className="flex items-center gap-2 w-full min-w-0">
+                    <span className="text-sm font-medium truncate">{truncate(session.title, 50)}</span>
+                  </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-muted-foreground/60">{formatDate(session.updatedAt)}</span>
                     <Badge variant="outline" className="text-[9px] h-4">{session.entryCount} msgs</Badge>
@@ -273,7 +302,7 @@ function SessionsPanel() {
                   </button>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </ScrollArea>

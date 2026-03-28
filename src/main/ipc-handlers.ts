@@ -18,9 +18,15 @@ import { sessionManager } from './core/session-manager'
 import { piInstaller } from './core/pi-installer'
 import { terminalManager } from './core/terminal-manager'
 import type { RuntimeEvent, PiSettings, PackageSource, Session } from '../shared/types'
+import type { SessionEntry } from '../shared/types'
 import { registerFileTreeHandlers } from './file-tree'
 
 const execAsync = promisify(exec)
+
+interface SessionLink {
+  session: Session
+  conversationId: string
+}
 
 /**
  * Register all IPC handlers.
@@ -28,23 +34,52 @@ const execAsync = promisify(exec)
  */
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ==========================================================================
-  // Session persistence: threadId → Session on disk
+  // Session persistence: threadId → { session, conversationId }
   // ==========================================================================
 
-  const sessionMap = new Map<string, Session>()
+  const sessionMap = new Map<string, SessionLink>()
   let lastAssistantTimestamp = 0
 
-  function getSession(threadId: string): Session | undefined {
+  function getSessionLink(threadId: string): SessionLink | undefined {
     return sessionMap.get(threadId)
   }
 
-  async function ensureSession(threadId: string, cwd: string, provider?: string, model?: string): Promise<Session> {
-    let session = sessionMap.get(threadId)
-    if (session) return session
-    session = await sessionManager.createSession(cwd, { provider, model })
-    sessionMap.set(threadId, session)
-    console.log(`[IPC] Session created: threadId=${threadId}, path=${session.filePath}`)
-    return session
+  async function ensureSession(
+    threadId: string, cwd: string,
+    options?: { provider?: string; model?: string; sessionFilePath?: string; conversationId?: string }
+  ): Promise<SessionLink> {
+    let link = sessionMap.get(threadId)
+    if (link) return link
+
+    let session: Session
+    const { sessionFilePath, conversationId, provider, model } = options || {}
+
+    if (sessionFilePath) {
+      // Check if another thread already uses this session file — reuse the object
+      for (const existing of sessionMap.values()) {
+        if (existing.session.filePath === sessionFilePath) {
+          session = existing.session
+          break
+        }
+      }
+      if (!session) {
+        // Load from disk
+        const loaded = await sessionManager.loadSession(sessionFilePath)
+        if (loaded) {
+          session = loaded
+        } else {
+          session = await sessionManager.createSession(cwd, { provider, model })
+        }
+      }
+    } else {
+      session = await sessionManager.createSession(cwd, { provider, model })
+    }
+
+    const convId = conversationId || `conv_${crypto.randomUUID().slice(0, 8)}`
+    link = { session, conversationId: convId }
+    sessionMap.set(threadId, link)
+    console.log(`[IPC] Session linked: threadId=${threadId}, path=${session.filePath}, conv=${convId}`)
+    return link
   }
 
   // ==========================================================================
@@ -114,7 +149,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ==========================================================================
 
   ipcMain.handle('pi:start-session', async (_event, options) => {
-    const { threadId, cwd, provider, model } = options
+    const { threadId, cwd, provider, model, sessionFilePath, conversationId } = options
 
     // Merge API keys into the process environment
     const apiKeys = await providerManager.exportEnvForProcess(provider)
@@ -124,8 +159,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try {
       const result = await piRuntime.startSession({ threadId, cwd, provider, model })
 
-      // Create session file on disk for persistence
-      await ensureSession(threadId, cwd, provider, model)
+      // Link threadId to a session (create new or reuse existing)
+      await ensureSession(threadId, cwd, { provider, model, sessionFilePath, conversationId })
 
       return result
     } finally {
@@ -142,9 +177,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('pi:stop-session', async (_event, threadId: string) => {
     // Final save before stopping
-    const session = getSession(threadId)
-    if (session) {
-      sessionManager.saveSession(session)
+    const link = getSessionLink(threadId)
+    if (link) {
+      sessionManager.saveSession(link.session)
       sessionMap.delete(threadId)
     }
     await piRuntime.stopSession(threadId)
@@ -152,13 +187,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('pi:send-turn', async (_event, threadId: string, input: string) => {
     // Save the user message to the session file
-    const session = getSession(threadId)
-    if (session) {
-      const lastEntry = session.entries[session.entries.length - 1]
-      sessionManager.addEntry(session, {
+    const link = getSessionLink(threadId)
+    if (link) {
+      const lastEntry = link.session.entries[link.session.entries.length - 1]
+      sessionManager.addEntry(link.session, {
         role: 'user',
         content: input,
         parentId: lastEntry?.id ?? null,
+        conversationId: link.conversationId,
       })
     }
 
@@ -300,6 +336,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('session:create', async (_event, cwd: string, options?: any) => {
     return sessionManager.createSession(cwd, options)
+  })
+
+  ipcMain.handle('session:conversations', async (_event, filePath: string) => {
+    const session = await sessionManager.loadSession(filePath)
+    if (!session) return null
+    return sessionManager.extractConversations(session.entries)
   })
 
   ipcMain.handle('session:delete', async (_event, filePath: string) => {
@@ -485,38 +527,38 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
     // --- Session persistence ---
     const threadId = event.threadId
-    const session = getSession(threadId)
-    if (!session) return
+    const link = getSessionLink(threadId)
+    if (!link) return
 
     switch (event.type) {
       case 'content.delta': {
         // Accumulate assistant text
         if (event.payload.streamKind === 'assistant_text') {
-          ;(session as any)._accumulatedText = ((session as any)._accumulatedText || '') + event.payload.delta
+          ;(link.session as any)._accumulatedText = ((link.session as any)._accumulatedText || '') + event.payload.delta
         }
         if (event.payload.streamKind === 'assistant_thinking') {
-          ;(session as any)._accumulatedThinking = ((session as any)._accumulatedThinking || '') + event.payload.delta
+          ;(link.session as any)._accumulatedThinking = ((link.session as any)._accumulatedThinking || '') + event.payload.delta
         }
         break
       }
 
       case 'turn.started': {
         // Reset accumulator for this turn
-        ;(session as any)._accumulatedText = ''
-        ;(session as any)._accumulatedThinking = ''
+        ;(link.session as any)._accumulatedText = ''
+        ;(link.session as any)._accumulatedThinking = ''
         lastAssistantTimestamp = 0
         break
       }
 
       case 'turn.completed': {
-        const text = (session as any)._accumulatedText || ''
-        const thinking = (session as any)._accumulatedThinking || ''
-        ;(session as any)._accumulatedText = ''
-        ;(session as any)._accumulatedThinking = ''
+        const text = (link.session as any)._accumulatedText || ''
+        const thinking = (link.session as any)._accumulatedThinking || ''
+        ;(link.session as any)._accumulatedText = ''
+        ;(link.session as any)._accumulatedThinking = ''
 
         if (text || thinking) {
           // Save assistant message entry
-          const lastEntry = session.entries[session.entries.length - 1]
+          const lastEntry = link.session.entries[link.session.entries.length - 1]
           const content: unknown[] = []
           if (thinking) {
             content.push({ type: 'thinking', thinking })
@@ -525,12 +567,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             content.push({ type: 'text', text })
           }
 
-          sessionManager.addEntry(session, {
+          sessionManager.addEntry(link.session, {
             role: 'assistant',
             content: content.length === 1 && content[0].type === 'text'
               ? text
               : JSON.stringify(content),
             parentId: lastEntry?.id ?? null,
+            conversationId: link.conversationId,
           })
         }
         break
@@ -538,7 +581,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
       case 'session.exited': {
         // Final save and remove from memory
-        sessionManager.saveSession(session)
+        sessionManager.saveSession(link.session)
         sessionMap.delete(threadId)
         break
       }

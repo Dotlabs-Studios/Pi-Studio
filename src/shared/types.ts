@@ -121,12 +121,19 @@ export type RuntimeEvent =
 // Session Types
 // ============================================================================
 
+export interface Conversation {
+  id: string
+  label: string
+  entries: SessionEntry[]
+}
+
 export interface SessionEntry {
   id: string
   parentId: string | null
   role: 'user' | 'assistant' | 'tool_result' | 'system'
   content: string
   timestamp: number
+  conversationId: string
   label?: string
   metadata?: Record<string, unknown>
   children?: string[]

@@ -27,7 +27,7 @@ const piStudioAPI = {
 
   // ---- Pi Runtime ----
   pi: {
-    startSession: (options: { threadId: string; cwd: string; provider?: string; model?: string }) =>
+    startSession: (options: { threadId: string; cwd: string; provider?: string; model?: string; sessionFilePath?: string; conversationId?: string }) =>
       ipcRenderer.invoke('pi:start-session', options),
     stopSession: (threadId: string) => ipcRenderer.invoke('pi:stop-session', threadId),
     sendTurn: (threadId: string, input: string) =>
@@ -90,6 +90,7 @@ const piStudioAPI = {
     load: (filePath: string) => ipcRenderer.invoke('session:load', filePath),
     create: (cwd: string, options?: any) =>
       ipcRenderer.invoke('session:create', cwd, options),
+    conversations: (filePath: string) => ipcRenderer.invoke('session:conversations', filePath),
     delete: (filePath: string) => ipcRenderer.invoke('session:delete', filePath),
   },
 

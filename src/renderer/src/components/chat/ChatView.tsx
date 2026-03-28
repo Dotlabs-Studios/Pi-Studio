@@ -351,12 +351,20 @@ function Composer() {
 
     if (!activeThreadId) {
       activeThreadId = uuid()
+      const tab = useChatStore.getState().tabs.find(t => t.id === useChatStore.getState().activeTabId)
       try {
         await window.piStudio.pi.startSession({
           threadId: activeThreadId, cwd: currentProject,
           provider: selectedProvider ?? undefined, model: selectedModel ?? undefined,
+          sessionFilePath: tab?.sessionFilePath,
+          conversationId: tab?.conversationId,
         })
         useChatStore.getState().setThreadId(activeThreadId)
+        if (!tab?.sessionFilePath) {
+          // New session was created — save the filePath
+          useChatStore.getState().setCurrentSession(useChatStore.getState().currentSessionFilePath || '')
+          useProjectStore.getState().bumpSessionList()
+        }
       } catch (err: any) {
         addToast(err.message || 'Failed to start session', 'error')
         return

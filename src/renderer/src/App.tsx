@@ -7,6 +7,7 @@ import { TitleBar } from '@/components/layout/TitleBar'
 import { Header } from '@/components/layout/Header'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ChatView } from '@/components/chat/ChatView'
+import { ChatTabBar } from '@/components/chat/ChatTabBar'
 import { WelcomeScreen } from '@/components/welcome/WelcomeScreen'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/ui/toast'
@@ -120,6 +121,7 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
+          <ChatTabBar />
           <ChatView />
           {terminalOpen && <TerminalPanel />}
         </div>

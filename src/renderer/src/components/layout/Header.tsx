@@ -28,7 +28,7 @@ export function Header() {
   const { currentProject, recentProjects } = useProjectStore()
   const { providers, selectedProvider, selectedModel, setSelectedProvider, setSelectedModel, reloadProviders } = useProviderStore()
   const { setSettingsOpen, toggleSidebar, terminalOpen, toggleTerminal } = useUIStore()
-  const { messages, setThreadId, clearMessages, isStreaming } = useChatStore()
+  const { isStreaming } = useChatStore()
   const { addToast } = useToastStore()
 
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
@@ -108,25 +108,63 @@ export function Header() {
   }
 
   const handleNewChat = async () => {
-    const state = useChatStore.getState()
-    if (state.threadId) {
-      try { await window.piStudio.pi.stopSession(state.threadId) } catch {}
+    if (!currentProject) return
+
+    const chatState = useChatStore.getState()
+    const conversationId = `conv_${crypto.randomUUID()}`
+
+    // If we have a current session, create a new conversation within it
+    if (chatState.currentSessionFilePath) {
+      const newThreadId = crypto.randomUUID()
+      try {
+        await window.piStudio.pi.startSession({
+          threadId: newThreadId, cwd: currentProject,
+          provider: selectedProvider ?? undefined,
+          model: selectedModel ?? undefined,
+          sessionFilePath: chatState.currentSessionFilePath,
+          conversationId,
+        })
+        useChatStore.getState().createTab({
+          cwd: currentProject,
+          threadId: newThreadId,
+          provider: selectedProvider ?? undefined,
+          model: selectedModel ?? undefined,
+          label: 'New Chat',
+          sessionFilePath: chatState.currentSessionFilePath,
+          conversationId,
+        })
+        addToast('New chat started', 'success')
+      } catch (err: any) {
+        addToast(err.message || 'Failed to start chat', 'error')
+      }
+      return
     }
-    const projectPath = useProjectStore.getState().currentProject
-    if (!projectPath) return
-    const threadId = crypto.randomUUID()
+
+    // No current session — create a brand new one
+    const session = await window.piStudio.session.create(currentProject)
+    const newThreadId = crypto.randomUUID()
     try {
       await window.piStudio.pi.startSession({
-        threadId, cwd: projectPath,
+        threadId: newThreadId, cwd: currentProject,
         provider: selectedProvider ?? undefined,
         model: selectedModel ?? undefined,
+        sessionFilePath: session.filePath,
+        conversationId,
       })
-      setThreadId(threadId)
-      clearMessages()
+      useChatStore.getState().setCurrentSession(session.filePath)
+      useChatStore.getState().createTab({
+        cwd: currentProject,
+        threadId: newThreadId,
+        provider: selectedProvider ?? undefined,
+        model: selectedModel ?? undefined,
+        label: 'New Chat',
+        sessionFilePath: session.filePath,
+        conversationId,
+      })
+      useProjectStore.getState().bumpSessionList()
       addToast('New session started', 'success')
     } catch (err: any) {
       addToast(err.message || 'Failed to start session', 'error')
-      useChatStore.getState().setError(err.message || 'Failed to start session')
     }
   }
 

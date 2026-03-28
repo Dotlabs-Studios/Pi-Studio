@@ -8,6 +8,7 @@ import type {
   Skill,
   SessionSummary,
   Session,
+  Conversation,
   PiSettings,
   ResolvedConfig,
   PackageSource,
@@ -28,6 +29,8 @@ export interface PiStudioAPI {
       cwd: string
       provider?: string
       model?: string
+      sessionFilePath?: string
+      conversationId?: string
     }) => Promise<{ threadId: string; status: string }>
     stopSession: (threadId: string) => Promise<void>
     sendTurn: (threadId: string, input: string) => Promise<void>
@@ -75,6 +78,7 @@ export interface PiStudioAPI {
     listProject: (cwd: string) => Promise<SessionSummary[]>
     load: (filePath: string) => Promise<Session | null>
     create: (cwd: string, options?: any) => Promise<Session>
+    conversations: (filePath: string) => Promise<Conversation[] | null>
     delete: (filePath: string) => Promise<void>
   }
 

@@ -9,28 +9,26 @@ interface ProjectState {
   currentProject: string | null
   recentProjects: string[]
   isLoading: boolean
+  sessionListVersion: number
 
   setProject: (path: string) => void
   setRecentProjects: (projects: string[]) => void
   setLoading: (loading: boolean) => void
   clearProject: () => void
+  bumpSessionList: () => void
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
   currentProject: null,
   recentProjects: [],
   isLoading: false,
+  sessionListVersion: 0,
 
   setProject: (path) => {
-    // Stop current pi session and clear chat
-    const chat = useChatStore.getState()
-    if (chat.threadId) {
-      window.piStudio.pi.stopSession(chat.threadId).catch(() => {})
-    }
-    chat.clearMessages()
-    chat.setThreadId(null)
+    // Close all chat tabs for the old project
+    useChatStore.getState().closeAllTabs()
 
-    set({ currentProject: path, isLoading: false })
+    set({ currentProject: path, isLoading: false, sessionListVersion: 0 })
   },
 
   setRecentProjects: (projects) =>
@@ -41,4 +39,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
 
   clearProject: () =>
     set({ currentProject: null }),
+
+  bumpSessionList: () =>
+    set((s) => ({ sessionListVersion: s.sessionListVersion + 1 })),
 }))

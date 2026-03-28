@@ -202,6 +202,7 @@ class SessionManager {
     const newEntry: SessionEntry = {
       ...entry,
       id: randomUUID(),
+      conversationId: entry.conversationId || 'default',
       timestamp: Date.now(),
     }
 
@@ -292,6 +293,33 @@ class SessionManager {
    */
   private getSessionsDir(cwd: string): string {
     return path.join(cwd, '.pi', 'sessions')
+  }
+
+  /**
+   * Extract conversations from session entries.
+   * Groups entries by conversationId, returns labeled conversations.
+   */
+  extractConversations(entries: SessionEntry[]): Conversation[] {
+    const convMap = new Map<string, SessionEntry[]>()
+    for (const entry of entries) {
+      const cid = entry.conversationId || 'default'
+      if (!convMap.has(cid)) convMap.set(cid, [])
+      convMap.get(cid)!.push(entry)
+    }
+
+    const conversations: Conversation[] = []
+    for (const [id, convEntries] of convMap) {
+      const firstUserMsg = convEntries.find((e) => e.role === 'user')
+      conversations.push({
+        id,
+        label: firstUserMsg
+          ? (typeof firstUserMsg.content === 'string' ? firstUserMsg.content : JSON.stringify(firstUserMsg.content)).substring(0, 60)
+          : 'Untitled',
+        entries: convEntries,
+      })
+    }
+
+    return conversations
   }
 }
 
